@@ -10,7 +10,7 @@ namespace topical;
 /// Thread-safe: subscribe and dispose may be called concurrently with <see cref="Invoke"/>.
 /// </summary>
 /// <typeparam name="T">The update value type.</typeparam>
-public abstract class FilterableTopic<T>
+public abstract class FilterableTopic<T> : IFilterableTopic<T>
     where T : notnull
 {
     private ImmutableArray<(Func<T, bool> Condition, TopicHandler<T> Handler)> subscriptions = [];

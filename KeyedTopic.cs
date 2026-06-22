@@ -12,7 +12,7 @@ namespace topical;
 /// </summary>
 /// <typeparam name="TKey">The routing key type.</typeparam>
 /// <typeparam name="T">The update value type.</typeparam>
-public abstract class KeyedTopic<TKey, T>
+public abstract class KeyedTopic<TKey, T> : IKeyedTopic<TKey, T>
     where TKey : notnull
     where T : notnull
 {

@@ -8,12 +8,12 @@ cancellation, and routing is needed.
 
 ## Topic Types
 
-| Class                      | Dispatch       | Invoke                           | Handlers     |
-|----------------------------|----------------|----------------------------------|--------------|
-| `KeyedTopic<TKey, T>`      | O(1) by key    | Sync                             | Sync         |
-| `AsyncKeyedTopic<TKey, T>` | O(1) by key    | Async (concurrent or sequential) | Sync + Async |
-| `FilterableTopic<T>`       | O(n) predicate | Sync                             | Sync         |
-| `AsyncFilterableTopic<T>`  | O(n) predicate | Async (concurrent or sequential) | Sync + Async |
+| Class                      | Dispatch       | Invoke | Handlers     |
+|----------------------------|----------------|--------|--------------|
+| `KeyedTopic<TKey, T>`      | O(1) by key    | Sync   | Sync         |
+| `AsyncKeyedTopic<TKey, T>` | O(1) by key    | Async  | Sync + Async |
+| `FilterableTopic<T>`       | O(n) predicate | Sync   | Sync         |
+| `AsyncFilterableTopic<T>`  | O(n) predicate | Async  | Sync + Async |
 
 ---
 
@@ -78,9 +78,6 @@ var subs = topic.Subscribe(dictionary);
 
 // Concurrent — all handlers for the key run in parallel
 await topic.InvokeAsync(knxKey, true, cancellationToken);
-
-// Sequential — handlers run one at a time; an exception stops the rest
-await topic.InvokeSequentialAsync(knxKey, true, cancellationToken);
 ```
 
 ---
@@ -118,9 +115,6 @@ var sub = topic.Subscribe(
 
 // Concurrent invocation
 await topic.InvokeAsync(scenarioUpdate, cancellationToken);
-
-// Sequential invocation
-await topic.InvokeSequentialAsync(scenarioUpdate, cancellationToken);
 ```
 
 ---
@@ -139,36 +133,93 @@ All topic types are safe for concurrent subscribe, dispose, and invoke operation
 
 ## Defining a Topic
 
-Extend the appropriate base class. The class itself carries no logic — it is purely a named, typed channel.
+Extend the appropriate base class and declare a matching non-generic interface. The class itself carries no logic — it
+is purely a named, typed channel.
 
 ```csharp
 // Keyed — sync
-public class KnxFloatTopic : KeyedTopic<KnxKey, KnxFloatTopicUpdate>;
+public interface IKnxFloatTopic : IKeyedTopic<KnxKey, KnxFloatTopicUpdate>;
+public class KnxFloatTopic : KeyedTopic<KnxKey, KnxFloatTopicUpdate>, IKnxFloatTopic;
 
 // Keyed — async
-public class KnxBoolTopic : AsyncKeyedTopic<KnxKey, KnxBoolTopicUpdate>;
+public interface IKnxBoolTopic : IAsyncKeyedTopic<KnxKey, KnxBoolTopicUpdate>;
+public class KnxBoolTopic : AsyncKeyedTopic<KnxKey, KnxBoolTopicUpdate>, IKnxBoolTopic;
 
 // Filterable — sync
-public class NetworkTopic : FilterableTopic<NetworkState>;
+public interface INetworkTopic : IFilterableTopic<NetworkState>;
+public class NetworkTopic : FilterableTopic<NetworkState>, INetworkTopic;
 
 // Filterable — async
-public class ScenarioTopic : AsyncFilterableTopic<ScenarioUpdate>;
+public interface IScenarioTopic : IAsyncFilterableTopic<ScenarioUpdate>;
+public class ScenarioTopic : AsyncFilterableTopic<ScenarioUpdate>, IScenarioTopic;
 
 // Signal-only (no data)
-public class ReloadTopic : FilterableTopic<EmptyUpdate>;
+public interface IReloadTopic : IFilterableTopic<EmptyUpdate>;
+public class ReloadTopic : FilterableTopic<EmptyUpdate>, IReloadTopic;
 ```
 
 Register as singletons in your DI container so all publishers and subscribers share the same instance.
 
 ---
 
-## Choosing Between Concurrent and Sequential Invoke
+## Dependency Injection
 
-|                   | `InvokeAsync`                                  | `InvokeSequentialAsync`                  |
-|-------------------|------------------------------------------------|------------------------------------------|
-| Handler execution | All start immediately in parallel              | One at a time, in subscription order     |
-| Total time        | ≈ max(handler durations)                       | ≈ sum(handler durations)                 |
-| On exception      | All handlers still run; all exceptions surface | First exception stops remaining handlers |
+Each topic class implements a matching generic interface that exposes its full public API:
 
-Use `InvokeAsync` by default. Use `InvokeSequentialAsync` when handlers must not overlap or when ordering matters (e.g.
-write-then-notify patterns).
+| Interface                      | Implemented by             |
+|--------------------------------|----------------------------|
+| `IKeyedTopic<TKey, T>`         | `KeyedTopic<TKey, T>`      |
+| `IAsyncKeyedTopic<TKey, T>`    | `AsyncKeyedTopic<TKey, T>` |
+| `IFilterableTopic<T>`          | `FilterableTopic<T>`       |
+| `IAsyncFilterableTopic<T>`     | `AsyncFilterableTopic<T>`  |
+
+### Recommended: named (non-generic) topic interfaces
+
+The recommended DI pattern is to define a dedicated non-generic interface for each topic. This keeps injection sites
+clean and free of type parameters, and gives each topic a distinct identity in the DI container.
+
+**1. Declare the topic interface** by extending the appropriate library interface:
+
+```csharp
+public interface IKnxFloatTopic : IAsyncKeyedTopic<KnxKey, float>;
+public interface INetworkTopic : IFilterableTopic<NetworkState>;
+public interface IScenarioTopic : IAsyncFilterableTopic<ScenarioUpdate>;
+```
+
+**2. Implement it on the topic class** alongside the base class:
+
+```csharp
+public class KnxFloatTopic : AsyncKeyedTopic<KnxKey, float>, IKnxFloatTopic;
+public class NetworkTopic : FilterableTopic<NetworkState>, INetworkTopic;
+public class ScenarioTopic : AsyncFilterableTopic<ScenarioUpdate>, IScenarioTopic;
+```
+
+**3. Register against the named interface:**
+
+```csharp
+services.AddSingleton<IKnxFloatTopic, KnxFloatTopic>();
+services.AddSingleton<INetworkTopic, NetworkTopic>();
+services.AddSingleton<IScenarioTopic, ScenarioTopic>();
+```
+
+**4. Inject the named interface** — no generic parameters at the injection site:
+
+```csharp
+// Subscriber
+public class KnxListener(IKnxFloatTopic topic)
+{
+    public IDisposable Start() =>
+        topic.Subscribe(KnxKey.Temperature, async (value, ct) =>
+            await HandleTemperatureAsync(value, ct));
+}
+
+// Publisher
+public class KnxPublisher(IKnxFloatTopic topic)
+{
+    public Task PublishAsync(KnxKey key, float value, CancellationToken ct) =>
+        topic.InvokeAsync(key, value, ct);
+}
+```
+
+Because `IKnxFloatTopic` extends `IAsyncKeyedTopic<KnxKey, float>`, it carries the full API with no extra boilerplate.
+Multiple consumers can share the same singleton instance via the same named interface.

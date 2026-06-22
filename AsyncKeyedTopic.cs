@@ -7,12 +7,11 @@ namespace topical;
 /// <summary>
 /// A pub/sub topic where subscribers register interest in a specific <typeparamref name="TKey"/>.
 /// Dispatch is O(1) per key — only handlers registered for the exact key are invoked.
-/// Exceptions thrown by handlers propagate to the caller of <see cref="InvokeAsync"/> or
-/// <see cref="InvokeSequentialAsync"/>, matching standard C# event behaviour.
+/// Exceptions thrown by handlers propagate to the caller of <see cref="InvokeAsync"/>, matching standard C# event behaviour.
 /// </summary>
 /// <typeparam name="TKey">The routing key type. Must match the key used when subscribing.</typeparam>
 /// <typeparam name="T">The update value type.</typeparam>
-public class AsyncKeyedTopic<TKey, T>
+public class AsyncKeyedTopic<TKey, T> : IAsyncKeyedTopic<TKey, T>
     where TKey : notnull
     where T : notnull
 {
@@ -134,31 +133,5 @@ public class AsyncKeyedTopic<TKey, T>
         await Task
             .WhenAll(tasks)
             .ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Invokes handlers registered for <paramref name="key"/> one at a time in subscription order.
-    /// An exception from one handler stops subsequent handlers from running.
-    /// </summary>
-    [PublicAPI]
-    public async Task InvokeSequentialAsync(
-        TKey key,
-        T value,
-        CancellationToken cancellationToken = default
-    )
-    {
-        if (!handlers.TryGetValue(key, out var subscriptions)) return;
-
-        foreach (var subscription in subscriptions)
-        {
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(
-                cancellationToken,
-                subscription.CancellationToken
-            );
-
-            await subscription
-                .AsyncHandler(value, cts.Token)
-                .ConfigureAwait(false);
-        }
     }
 }

@@ -5,13 +5,12 @@ namespace topical;
 
 /// <summary>
 /// A pub/sub topic where subscribers optionally provide a predicate to filter which updates they receive.
-/// Supports both sync and async handlers. All matching handlers run concurrently via
-/// <see cref="InvokeAsync"/> or sequentially via <see cref="InvokeSequentialAsync"/>.
+/// Supports both sync and async handlers. All matching handlers run concurrently via <see cref="InvokeAsync"/>.
 /// Exceptions propagate to the invoke caller, matching standard C# event behaviour.
 /// Thread-safe: subscribe and dispose may be called concurrently with invoke methods.
 /// </summary>
 /// <typeparam name="T">The update value type.</typeparam>
-public class AsyncFilterableTopic<T>
+public class AsyncFilterableTopic<T> : IAsyncFilterableTopic<T>
     where T : notnull
 {
     private ImmutableArray<AsyncFilteredTopicSubscription<T>> subscriptions = [];
@@ -127,28 +126,5 @@ public class AsyncFilterableTopic<T>
         await Task
             .WhenAll(tasks)
             .ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Invokes matching handlers one at a time in subscription order.
-    /// An exception from one handler stops subsequent handlers from running.
-    /// </summary>
-    [PublicAPI]
-    public async Task InvokeSequentialAsync(
-        T value,
-        CancellationToken cancellationToken = default
-    )
-    {
-        foreach (var subscription in subscriptions.Where(e => e.Condition(value)))
-        {
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(
-                cancellationToken,
-                subscription.CancellationToken
-            );
-
-            await subscription
-                .AsyncHandler(value, cts.Token)
-                .ConfigureAwait(false);
-        }
     }
 }
