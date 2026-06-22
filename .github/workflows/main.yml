@@ -26,7 +26,7 @@ jobs:
         run: dotnet build --configuration Release --no-restore
         
       - name: Pack
-        run: dotnet pack -p:PackageVersion=${{ github.event.release.name }} --no-restore --no-build --configuration Release --output packages
+        run: dotnet pack -p:PackageVersion=${{ github.event.release.name }} --no-restore --no-build --configuration Release --output packages -p:IncludeSymbols=true -p:SymbolPackageFormat=snupkg 
         
         # Get a short-lived NuGet API key
       - name: NuGet login (OIDC → temp API key)
