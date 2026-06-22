@@ -1,4 +1,4 @@
-# Topics
+# Topical
 
 A lightweight, allocation-efficient pub/sub library for .NET with first-class support for async handlers, keyed routing,
 and predicate filtering. Designed as an alternative to standard C# events where more control over dispatch,
