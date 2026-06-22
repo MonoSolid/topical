@@ -12,8 +12,8 @@ cancellation, and routing is needed.
 |----------------------------|----------------|--------|--------------|
 | `KeyedTopic<TKey, T>`      | O(1) by key    | Sync   | Sync         |
 | `AsyncKeyedTopic<TKey, T>` | O(1) by key    | Async  | Sync + Async |
-| `FilterableTopic<T>`       | O(n) predicate | Sync   | Sync         |
-| `AsyncFilterableTopic<T>`  | O(n) predicate | Async  | Sync + Async |
+| `Topic<T>`                 | O(n) predicate | Sync   | Sync         |
+| `AsyncTopic<T>`            | O(n) predicate | Async  | Sync + Async |
 
 ---
 
@@ -82,15 +82,15 @@ await topic.InvokeAsync(knxKey, true, cancellationToken);
 
 ---
 
-## Filterable Topics
+## Topics
 
 Use when subscribers need to express arbitrary filter criteria, or when there is no natural routing key. All subscribers
 are evaluated on every invoke — O(n).
 
-### `FilterableTopic<T>` (sync)
+### `Topic<T>` (sync)
 
 ```csharp
-public class NetworkTopic : FilterableTopic<NetworkState>;
+public class NetworkTopic : Topic<NetworkState>;
 
 // Subscribe without filter — receives all updates
 var sub = topic.Subscribe(state => UpdateUi(state));
@@ -103,10 +103,10 @@ var sub2 = topic.Subscribe(
 topic.Invoke(new NetworkState(...));
 ```
 
-### `AsyncFilterableTopic<T>`
+### `AsyncTopic<T>`
 
 ```csharp
-public class ScenarioTopic : AsyncFilterableTopic<ScenarioUpdate>;
+public class ScenarioTopic : AsyncTopic<ScenarioUpdate>;
 
 // Async handler with filter
 var sub = topic.Subscribe(
@@ -125,7 +125,7 @@ All topic types are safe for concurrent subscribe, dispose, and invoke operation
 
 - **Keyed topics** use `ConcurrentDictionary` with `ImmutableArray` values. Subscription changes use atomic
   `AddOrUpdate`.
-- **Filterable topics** use an `ImmutableArray` field updated via `ImmutableInterlocked.Update` (lock-free CAS loop).
+- **Topics** use an `ImmutableArray` field updated via `ImmutableInterlocked.Update` (lock-free CAS loop).
   Invoke takes a snapshot of the subscription list — concurrent subscribe/dispose during an active invoke affects the
   *next* invocation, not the current one.
 
@@ -145,17 +145,17 @@ public class KnxFloatTopic : KeyedTopic<KnxKey, KnxFloatTopicUpdate>, IKnxFloatT
 public interface IKnxBoolTopic : IAsyncKeyedTopic<KnxKey, KnxBoolTopicUpdate>;
 public class KnxBoolTopic : AsyncKeyedTopic<KnxKey, KnxBoolTopicUpdate>, IKnxBoolTopic;
 
-// Filterable — sync
-public interface INetworkTopic : IFilterableTopic<NetworkState>;
-public class NetworkTopic : FilterableTopic<NetworkState>, INetworkTopic;
+// Topic — sync
+public interface INetworkTopic : ITopic<NetworkState>;
+public class NetworkTopic : Topic<NetworkState>, INetworkTopic;
 
-// Filterable — async
-public interface IScenarioTopic : IAsyncFilterableTopic<ScenarioUpdate>;
-public class ScenarioTopic : AsyncFilterableTopic<ScenarioUpdate>, IScenarioTopic;
+// Topic — async
+public interface IScenarioTopic : IAsyncTopic<ScenarioUpdate>;
+public class ScenarioTopic : AsyncTopic<ScenarioUpdate>, IScenarioTopic;
 
 // Signal-only (no data)
-public interface IReloadTopic : IFilterableTopic<EmptyUpdate>;
-public class ReloadTopic : FilterableTopic<EmptyUpdate>, IReloadTopic;
+public interface IReloadTopic : ITopic<EmptyUpdate>;
+public class ReloadTopic : Topic<EmptyUpdate>, IReloadTopic;
 ```
 
 Register as singletons in your DI container so all publishers and subscribers share the same instance.
@@ -170,8 +170,8 @@ Each topic class implements a matching generic interface that exposes its full p
 |--------------------------------|----------------------------|
 | `IKeyedTopic<TKey, T>`         | `KeyedTopic<TKey, T>`      |
 | `IAsyncKeyedTopic<TKey, T>`    | `AsyncKeyedTopic<TKey, T>` |
-| `IFilterableTopic<T>`          | `FilterableTopic<T>`       |
-| `IAsyncFilterableTopic<T>`     | `AsyncFilterableTopic<T>`  |
+| `ITopic<T>`                    | `Topic<T>`                 |
+| `IAsyncTopic<T>`               | `AsyncTopic<T>`            |
 
 ### Recommended: named (non-generic) topic interfaces
 
@@ -182,16 +182,16 @@ clean and free of type parameters, and gives each topic a distinct identity in t
 
 ```csharp
 public interface IKnxFloatTopic : IAsyncKeyedTopic<KnxKey, float>;
-public interface INetworkTopic : IFilterableTopic<NetworkState>;
-public interface IScenarioTopic : IAsyncFilterableTopic<ScenarioUpdate>;
+public interface INetworkTopic : ITopic<NetworkState>;
+public interface IScenarioTopic : IAsyncTopic<ScenarioUpdate>;
 ```
 
 **2. Implement it on the topic class** alongside the base class:
 
 ```csharp
 public class KnxFloatTopic : AsyncKeyedTopic<KnxKey, float>, IKnxFloatTopic;
-public class NetworkTopic : FilterableTopic<NetworkState>, INetworkTopic;
-public class ScenarioTopic : AsyncFilterableTopic<ScenarioUpdate>, IScenarioTopic;
+public class NetworkTopic : Topic<NetworkState>, INetworkTopic;
+public class ScenarioTopic : AsyncTopic<ScenarioUpdate>, IScenarioTopic;
 ```
 
 **3. Register against the named interface:**

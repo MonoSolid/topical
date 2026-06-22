@@ -1,8 +1,10 @@
 ﻿using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using JetBrains.Annotations;
+using topical.disposables;
+using topical.handlers;
 
-namespace topical;
+namespace topical.sync.keyed;
 
 /// <summary>
 /// A pub/sub topic where subscribers register interest in a specific <typeparamref name="TKey"/>.

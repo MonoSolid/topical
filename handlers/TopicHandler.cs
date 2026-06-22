@@ -1,4 +1,4 @@
-﻿namespace topical;
+﻿namespace topical.handlers;
 
 /// <summary>
 /// Topic update handler

@@ -1,8 +1,10 @@
 ﻿using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using JetBrains.Annotations;
+using topical.disposables;
+using topical.handlers;
 
-namespace topical;
+namespace topical.async.keyed;
 
 /// <summary>
 /// A pub/sub topic where subscribers register interest in a specific <typeparamref name="TKey"/>.
@@ -15,7 +17,7 @@ public class AsyncKeyedTopic<TKey, T> : IAsyncKeyedTopic<TKey, T>
     where TKey : notnull
     where T : notnull
 {
-    private readonly ConcurrentDictionary<TKey, ImmutableArray<AsyncTopicSubscription<T>>> handlers = new();
+    private readonly ConcurrentDictionary<TKey, ImmutableArray<AsyncKeyedTopicSubscription<T>>> handlers = new();
 
     /// <summary>Subscribes all entries in a dictionary, one handler per key.</summary>
     [PublicAPI]
@@ -74,7 +76,7 @@ public class AsyncKeyedTopic<TKey, T> : IAsyncKeyedTopic<TKey, T>
     {
         CancellationTokenSource cts = new();
 
-        var subscription = new AsyncTopicSubscription<T>(asyncHandler, cts.Token);
+        var subscription = new AsyncKeyedTopicSubscription<T>(asyncHandler, cts.Token);
 
         handlers.AddOrUpdate(
             key,

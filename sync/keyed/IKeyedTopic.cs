@@ -1,6 +1,7 @@
 using JetBrains.Annotations;
+using topical.handlers;
 
-namespace topical;
+namespace topical.sync.keyed;
 
 /// <summary>
 /// Pub/sub topic where subscribers register interest in a specific <typeparamref name="TKey"/>.
