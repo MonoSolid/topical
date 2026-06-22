@@ -44,13 +44,13 @@ invoked. Dispatch is O(1) via `ConcurrentDictionary`.
 ### `KeyedTopic<TKey, T>` (sync)
 
 ```csharp
-public class KnxFloatTopic : KeyedTopic<KnxKey, float>;
+public class StockPriceTopic : KeyedTopic<string, decimal>;
 
-// Subscribe
-var sub = topic.Subscribe(knxKey, value => Console.WriteLine(value));
+// Subscribe — only called when "AAPL" is published
+var sub = topic.Subscribe("AAPL", price => Console.WriteLine(price));
 
-// Invoke — only handlers registered for knxKey are called
-topic.Invoke(knxKey, 0.75f);
+// Invoke — only handlers registered for "AAPL" are called
+topic.Invoke("AAPL", 189.45m);
 
 // Unsubscribe
 sub.Dispose();
@@ -62,22 +62,22 @@ Supports both sync and async handlers. Accepts a `CancellationToken` on invoke t
 own token.
 
 ```csharp
-public class KnxBoolTopic : AsyncKeyedTopic<KnxKey, bool>;
+public class OrderTopic : AsyncKeyedTopic<Guid, OrderEvent>;
 
 // Async handler
-var sub = topic.Subscribe(knxKey, async (value, ct) =>
+var sub = topic.Subscribe(orderId, async (e, ct) =>
 {
-    await ProcessAsync(value, ct);
+    await SendConfirmationEmailAsync(e, ct);
 });
 
 // Sync handler (adapted automatically)
-var sub2 = topic.Subscribe(knxKey, value => Process(value));
+var sub2 = topic.Subscribe(orderId, e => UpdateOrderCache(e));
 
 // Subscribe multiple keys from a dictionary
 var subs = topic.Subscribe(dictionary);
 
 // Concurrent — all handlers for the key run in parallel
-await topic.InvokeAsync(knxKey, true, cancellationToken);
+await topic.InvokeAsync(orderId, orderEvent, cancellationToken);
 ```
 
 ---
@@ -90,31 +90,31 @@ are evaluated on every invoke — O(n).
 ### `Topic<T>` (sync)
 
 ```csharp
-public class NetworkTopic : Topic<NetworkState>;
+public class LogTopic : Topic<LogEntry>;
 
-// Subscribe without filter — receives all updates
-var sub = topic.Subscribe(state => UpdateUi(state));
+// Subscribe without filter — receives all log entries
+var sub = topic.Subscribe(entry => Console.WriteLine(entry.Message));
 
-// Subscribe with filter — receives only matching updates
+// Subscribe with filter — receives only errors
 var sub2 = topic.Subscribe(
-    state => state.Type == NetworkMonitorType.Knx,
-    state => HandleKnxNetwork(state));
+    entry => entry.Level == LogLevel.Error,
+    entry => AlertOpsTeam(entry));
 
-topic.Invoke(new NetworkState(...));
+topic.Invoke(new LogEntry(LogLevel.Error, "Disk full"));
 ```
 
 ### `AsyncTopic<T>`
 
 ```csharp
-public class ScenarioTopic : AsyncTopic<ScenarioUpdate>;
+public class PaymentTopic : AsyncTopic<PaymentEvent>;
 
-// Async handler with filter
+// Async handler with filter — only failed payments
 var sub = topic.Subscribe(
-    update => update.ScenarioId == activeId,
-    async (update, ct) => await ApplyScenarioAsync(update, ct));
+    e => e.Status == PaymentStatus.Failed,
+    async (e, ct) => await NotifyCustomerAsync(e, ct));
 
 // Concurrent invocation
-await topic.InvokeAsync(scenarioUpdate, cancellationToken);
+await topic.InvokeAsync(paymentEvent, cancellationToken);
 ```
 
 ---
@@ -138,24 +138,24 @@ is purely a named, typed channel.
 
 ```csharp
 // Keyed — sync
-public interface IKnxFloatTopic : IKeyedTopic<KnxKey, KnxFloatTopicUpdate>;
-public class KnxFloatTopic : KeyedTopic<KnxKey, KnxFloatTopicUpdate>, IKnxFloatTopic;
+public interface IStockPriceTopic : IKeyedTopic<string, decimal>;
+public class StockPriceTopic : KeyedTopic<string, decimal>, IStockPriceTopic;
 
 // Keyed — async
-public interface IKnxBoolTopic : IAsyncKeyedTopic<KnxKey, KnxBoolTopicUpdate>;
-public class KnxBoolTopic : AsyncKeyedTopic<KnxKey, KnxBoolTopicUpdate>, IKnxBoolTopic;
+public interface IOrderTopic : IAsyncKeyedTopic<Guid, OrderEvent>;
+public class OrderTopic : AsyncKeyedTopic<Guid, OrderEvent>, IOrderTopic;
 
 // Topic — sync
-public interface INetworkTopic : ITopic<NetworkState>;
-public class NetworkTopic : Topic<NetworkState>, INetworkTopic;
+public interface ILogTopic : ITopic<LogEntry>;
+public class LogTopic : Topic<LogEntry>, ILogTopic;
 
 // Topic — async
-public interface IScenarioTopic : IAsyncTopic<ScenarioUpdate>;
-public class ScenarioTopic : AsyncTopic<ScenarioUpdate>, IScenarioTopic;
+public interface IPaymentTopic : IAsyncTopic<PaymentEvent>;
+public class PaymentTopic : AsyncTopic<PaymentEvent>, IPaymentTopic;
 
 // Signal-only (no data)
-public interface IReloadTopic : ITopic<EmptyUpdate>;
-public class ReloadTopic : Topic<EmptyUpdate>, IReloadTopic;
+public interface IShutdownTopic : ITopic<Unit>;
+public class ShutdownTopic : Topic<Unit>, IShutdownTopic;
 ```
 
 Register as singletons in your DI container so all publishers and subscribers share the same instance.
@@ -181,45 +181,45 @@ clean and free of type parameters, and gives each topic a distinct identity in t
 **1. Declare the topic interface** by extending the appropriate library interface:
 
 ```csharp
-public interface IKnxFloatTopic : IAsyncKeyedTopic<KnxKey, float>;
-public interface INetworkTopic : ITopic<NetworkState>;
-public interface IScenarioTopic : IAsyncTopic<ScenarioUpdate>;
+public interface IOrderTopic : IAsyncKeyedTopic<Guid, OrderEvent>;
+public interface ILogTopic : ITopic<LogEntry>;
+public interface IPaymentTopic : IAsyncTopic<PaymentEvent>;
 ```
 
 **2. Implement it on the topic class** alongside the base class:
 
 ```csharp
-public class KnxFloatTopic : AsyncKeyedTopic<KnxKey, float>, IKnxFloatTopic;
-public class NetworkTopic : Topic<NetworkState>, INetworkTopic;
-public class ScenarioTopic : AsyncTopic<ScenarioUpdate>, IScenarioTopic;
+public class OrderTopic : AsyncKeyedTopic<Guid, OrderEvent>, IOrderTopic;
+public class LogTopic : Topic<LogEntry>, ILogTopic;
+public class PaymentTopic : AsyncTopic<PaymentEvent>, IPaymentTopic;
 ```
 
 **3. Register against the named interface:**
 
 ```csharp
-services.AddSingleton<IKnxFloatTopic, KnxFloatTopic>();
-services.AddSingleton<INetworkTopic, NetworkTopic>();
-services.AddSingleton<IScenarioTopic, ScenarioTopic>();
+services.AddSingleton<IOrderTopic, OrderTopic>();
+services.AddSingleton<ILogTopic, LogTopic>();
+services.AddSingleton<IPaymentTopic, PaymentTopic>();
 ```
 
 **4. Inject the named interface** — no generic parameters at the injection site:
 
 ```csharp
 // Subscriber
-public class KnxListener(IKnxFloatTopic topic)
+public class OrderConfirmationService(IOrderTopic topic)
 {
     public IDisposable Start() =>
-        topic.Subscribe(KnxKey.Temperature, async (value, ct) =>
-            await HandleTemperatureAsync(value, ct));
+        topic.Subscribe(orderId, async (e, ct) =>
+            await SendConfirmationEmailAsync(e, ct));
 }
 
 // Publisher
-public class KnxPublisher(IKnxFloatTopic topic)
+public class OrderService(IOrderTopic topic)
 {
-    public Task PublishAsync(KnxKey key, float value, CancellationToken ct) =>
-        topic.InvokeAsync(key, value, ct);
+    public Task PlaceOrderAsync(Order order, CancellationToken ct) =>
+        topic.InvokeAsync(order.Id, new OrderEvent(order), ct);
 }
 ```
 
-Because `IKnxFloatTopic` extends `IAsyncKeyedTopic<KnxKey, float>`, it carries the full API with no extra boilerplate.
+Because `IOrderTopic` extends `IAsyncKeyedTopic<Guid, OrderEvent>`, it carries the full API with no extra boilerplate.
 Multiple consumers can share the same singleton instance via the same named interface.
